@@ -1,0 +1,17 @@
+services:
+  retrieval:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      PERSIST_DIRECTORY: /app/chroma_db
+      OLLAMA_BASE_URL: http://192.168.28.8:11434
+      OLLAMA_EMBED_MODEL: nomic-embed-text
+    volumes:
+      - ./chroma_db:/app/chroma_db
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
