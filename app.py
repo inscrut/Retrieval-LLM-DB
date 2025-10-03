@@ -6,6 +6,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 import os
 import hashlib
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
@@ -17,6 +18,8 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://192.168.28.8:11434")
 
 # Инициализация embeddings
 embeddings = OllamaEmbeddings(model=EMBED_MODEL, base_url=OLLAMA_BASE_URL)
+
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Инициализация векторной БД (persistent) с метрикой cosine
 def get_vectorstore():

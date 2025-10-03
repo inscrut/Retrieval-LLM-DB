@@ -1,0 +1,178 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Data to ChromaDB</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 p-6">
+    <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md">
+        <h1 class="text-2xl font-bold mb-4">Add Data to ChromaDB</h1>
+        
+        <!-- Form for adding texts and metadatas -->
+        <div id="entry-form" class="mb-4">
+            <div class="entry mb-4 p-4 border rounded">
+                <div class="mb-2">
+                    <label class="block text-sm font-medium text-gray-700">Text</label>
+                    <textarea class="text-input w-full p-2 border rounded" rows="3" placeholder="Enter text"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="block text-sm font-medium text-gray-700">Metadata (JSON)</label>
+                    <textarea class="metadata-input w-full p-2 border rounded" rows="3" placeholder='{"source": "", "category": ""}'></textarea>
+                </div>
+                <button class="remove-entry bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Remove Entry</button>
+            </div>
+            <button id="add-entry" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Add Another Entry</button>
+        </div>
+
+        <!-- Buttons for creating and sending JSON -->
+        <div class="mb-4">
+            <button id="create-json" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 mr-2">Create JSON</button>
+            <button id="send-json" class="bg-purple-500 text-white px-4 py-2 rounded hover:bg-purple-600">Send JSON to API</button>
+        </div>
+
+        <!-- JSON Output Window -->
+        <div class="mb-4">
+            <h2 class="text-lg font-semibold">Generated JSON</h2>
+            <pre id="json-output" class="bg-gray-800 text-white p-4 rounded h-64 overflow-auto"></pre>
+        </div>
+
+        <!-- Server Response Window -->
+        <div>
+            <h2 class="text-lg font-semibold">Server Response</h2>
+            <pre id="server-response" class="bg-gray-800 text-white p-4 rounded h-64 overflow-auto"></pre>
+        </div>
+    </div>
+
+    <script>
+        // Add new entry
+        document.getElementById('add-entry').addEventListener('click', () => {
+            const entryForm = document.getElementById('entry-form');
+            const entry = document.createElement('div');
+            entry.className = 'entry mb-4 p-4 border rounded';
+            entry.innerHTML = `
+                <div class="mb-2">
+                    <label class="block text-sm font-medium text-gray-700">Text</label>
+                    <textarea class="text-input w-full p-2 border rounded" rows="3" placeholder="Enter text"></textarea>
+                </div>
+                <div class="mb-2">
+                    <label class="block text-sm font-medium text-gray-700">Metadata (JSON)</label>
+                    <textarea class="metadata-input w-full p-2 border rounded" rows="3" placeholder='{"source": "", "category": ""}'></textarea>
+                </div>
+                <button class="remove-entry bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Remove Entry</button>
+            `;
+            entryForm.insertBefore(entry, document.getElementById('add-entry'));
+        });
+
+        // Remove entry
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('remove-entry')) {
+                const entries = document.querySelectorAll('.entry');
+                if (entries.length > 1) {
+                    e.target.parentElement.remove();
+                } else {
+                    alert('At least one entry is required.');
+                }
+            }
+        });
+
+        // Create JSON
+        document.getElementById('create-json').addEventListener('click', () => {
+            const texts = [];
+            const metadatas = [];
+            const jsonOutput = document.getElementById('json-output');
+            
+            document.querySelectorAll('.entry').forEach(entry => {
+                const text = entry.querySelector('.text-input').value.trim();
+                const metadataText = entry.querySelector('.metadata-input').value.trim();
+                
+                if (text && metadataText) {
+                    try {
+                        const metadata = JSON.parse(metadataText);
+                        texts.push(text);
+                        metadatas.push(metadata);
+                    } catch (e) {
+                        jsonOutput.textContent = `Error: Invalid metadata JSON in one of the entries. ${e.message}`;
+                        return;
+                    }
+                }
+            });
+
+            if (texts.length === 0 || texts.length !== metadatas.length) {
+                jsonOutput.textContent = 'Error: Texts and metadatas must be non-empty and have the same length.';
+                return;
+            }
+
+            const jsonData = { texts, metadatas };
+            jsonOutput.textContent = JSON.stringify(jsonData, null, 2);
+        });
+
+        // Send JSON to API
+        document.getElementById('send-json').addEventListener('click', async () => {
+            const jsonOutput = document.getElementById('json-output').textContent;
+            const serverResponse = document.getElementById('server-response');
+            
+            if (!jsonOutput || jsonOutput.startsWith('Error')) {
+                serverResponse.textContent = 'Error: Please create valid JSON first.';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://192.168.28.5:8000/add_data', {
+                    method: 'POST',
+                    headers: {
+                        'accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: jsonOutput
+                });
+
+                const responseData = await response.json();
+                serverResponse.textContent = JSON.stringify(responseData, null, 2);
+            } catch (e) {
+                serverResponse.textContent = `Error: Failed to send data to API. ${e.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
